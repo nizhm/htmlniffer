@@ -4,4 +4,6 @@ Network HTML data fetcher
 
 ## init project and install dependencies<br/>
 
-**`npm run init`**
+```
+npm run init
+```
