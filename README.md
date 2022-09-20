@@ -2,4 +2,4 @@
 net html data fetcher
 
 # init project and install dependencies
-npm run init
+`npm run init`
