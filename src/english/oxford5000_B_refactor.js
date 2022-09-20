@@ -1,123 +1,140 @@
 (() => {
   console.clear();
 
-  (async () => {
-    // Detect domain to avoid cross domain
-    const targetURL = 'https://www.oxfordlearnersdictionaries.com/';
-    const targetDomain = new URL(targetURL).host;
-    const isDomainOk = document.domain === targetDomain;
-    if (!isDomainOk) {
-      if (confirm(`Navigate to '${targetURL}' ?`)) {
-        window.open(targetURL, '_self');
-        return;
-      }
-      console.warn('Sniff fail cause cross domain!');
+  // Detect domain to avoid CORS
+  const targetURL = 'https://www.oxfordlearnersdictionaries.com/';
+  const targetDomain = new URL(targetURL).host;
+  const isDomainOk = document.domain === targetDomain;
+  if (!isDomainOk) {
+    if (confirm(`Navigate to '${targetURL}' ?`)) {
+      window.open(targetURL, '_self');
       return;
     }
+    console.warn('Sniff fail cause CORS(https://developer.mozilla.org/en-US/docs/Web/HTTP/CORS)!');
+    return;
+  }
 
-    // Fetch html
-    const fetchDocString = async url => {
-      const response = await fetch(url);
-      const docString = await response.text();
-      return docString;
-    };
+  /**
+   * get HTML and parse into DOM tree
+   *
+   * @param url
+   * @return {Promise<Document>|Promise<Error>}
+   * @see https://developer.mozilla.org/en-US/docs/Web/API/XMLHttpRequest/HTML_in_XMLHttpRequest
+   */
+  function htmlFetcher(url) {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.addEventListener('load', () => resolve(xhr.response));
+      xhr.addEventListener('error', err => reject(err));
+      xhr.open('GET', url);
+      xhr.responseType = 'document';
+      xhr.send();
+    });
+  }
 
-    // Document string to document object
-    class DocParser {
-      constructor() {
-        const docParser = new DOMParser();
-        this.str2Doc = str => docParser.parseFromString(str, 'text/html');
+  /**
+   * transform data into JSON file
+   *
+   * @param data {Object|String}
+   */
+  const exportJson = (data, fileName) => {
+    const json = JSON.stringify(data, null, 2);
+    const blob = new Blob([json]);
+    const objectURL = window.URL.createObjectURL(blob);
+
+    const link = document.createElement('a');
+    link.download = `${fileName}.json`;
+    link.href = objectURL;
+    link.click();
+    window.URL.revokeObjectURL(objectURL);
+  };
+
+  /**
+   * get data from html Document
+   *
+   * @class Htmlniffer
+   */
+  class Htmlniffer {
+    static getContent = (node, selectors, container) => {
+      for(const { key, selector, contents } of selectors) {
+        const matches = node.querySelectorAll(selector);
+        const matchesLen = matches.length;
+
+        if (!matchesLen) {
+          container[key] = null;
+          return;
+        }
+
+        const hasSubData = typeof contents[0] !== 'string';
+        let contentList = [];
+        if (hasSubData) {
+          matches.forEach(element => {
+            let item = {};
+            contents.forEach(({ key: subKey, selector: subSelector, contents: subContents }) => {
+              if (!subContents.includes('innerHTML')) {
+                subContents.push('innerHTML');
+              }
+              const subNode = element.querySelector(subSelector);
+              let cont;
+              cont = subContents.map(el => `subNode?.${el}`).join('||');
+              cont += `||''`;
+              cont = eval(cont);
+              item[subKey] = cont;
+            });
+            contentList.push(item);
+          });
+          if (matchesLen === 1) {
+            contentList = contentList[0];
+          }
+          container[key] = contentList;
+        } else {
+          if (!contents.includes('innerHTML')) {
+            contents.push('innerHTML');
+          }
+          matches.forEach(element => {
+            let content;
+            content = contents.map(el => `element?.${el}`).join('||');
+            content += `||''`;
+            content = eval(content);
+            contentList.push(content);
+          });
+          if (matchesLen === 1) {
+            contentList = contentList[0];
+          }
+          container[key] = contentList;
+        }
       }
     }
-    const docParser = new DocParser();
 
-    // data to JSON file
-    const exportJson = data => {
-      const json = JSON.stringify(data, null, 2);
-      const blob = new Blob([json]);
-      const link = document.createElement('a');
-      const objUrl = URL.createObjectURL(blob);
-      link.download = 'oxford5000.json';
-      link.href = objUrl;
-      link.click();
-      URL.revokeObjectURL(objUrl);
-    };
+    constructor(url, selectors) {
+      this.htmlURL = url;
+      this.htmlData = {};
+      this.sniff = async function() {
+        const doc = await htmlFetcher(url);
+        Htmlniffer.getContent(doc, selectors, this.htmlData);
+      }
+    }
+  }
+
+  /**
+   * get Htmlniffer and init it
+   *
+   * @param args
+   * @return {Promise<Htmlniffer>}
+   */
+  const getHtmlniffer = async (...args) => {
+    const htmlniffer = new Htmlniffer(...args);
+    await htmlniffer.sniff();
+    return htmlniffer;
+  }
+
+  (async () => {
+    console.log('##### Start oxford5000 sniffer #####');
 
     // 5000 words list source
     const wordListUrl = 'https://www.oxfordlearnersdictionaries.com/wordlists/oxford3000-5000';
-    const wordListSelector = '#wordlistsContentPanel > ul > li';
 
-    class Htmlniffer {
-      static getContent = (node, selectors, container) => {
-        for(const { key, selector, contents } of selectors) {
-          const matches = node.querySelectorAll(selector);
-          const matchesLen = matches.length;
-
-          if (!matchesLen) {
-            container[key] = null;
-            return;
-          }
-
-          const hasSubData = typeof contents[0] !== 'string';
-          let contentList = [];
-          if (hasSubData) {
-            matches.forEach(element => {
-              let item = {};
-              contents.forEach(({ key: subKey, selector: subSelector, contents: subContents }) => {
-                if (!subContents.includes('innerHTML')) {
-                  subContents.push('innerHTML');
-                }
-                const subNode = element.querySelector(subSelector);
-                let cont;
-                cont = subContents.map(el => `subNode?.${el}`).join('||');
-                cont += `||''`;
-                cont = eval(cont);
-                item[subKey] = cont;
-              });
-              contentList.push(item);
-            });
-            if (matchesLen === 1) {
-              contentList = contentList[0];
-            }
-            container[key] = contentList;
-          } else {
-            if (!contents.includes('innerHTML')) {
-              contents.push('innerHTML');
-            }
-            matches.forEach(element => {
-              let content;
-              content = contents.map(el => `element?.${el}`).join('||');
-              content += `||''`;
-              content = eval(content);
-              contentList.push(content);
-            });
-            if (matchesLen === 1) {
-              contentList = contentList[0];
-            }
-            container[key] = contentList;
-          }
-        }
-      }
-
-      constructor(html, selectors) {
-        this.html = html;
-        this.htmlData = {};
-        this.sniff = async function() {
-          const docString = await fetchDocString(html);
-          const doc = docParser.str2Doc(docString);
-          Htmlniffer.getContent(doc, selectors, this.htmlData);
-        }
-      }
-    }
-
-    const getHtmlniffer = async (...args) => {
-      const htmlniffer = new Htmlniffer(...args);
-      await htmlniffer.sniff();
-      return htmlniffer;
-    }
-
-    console.log('##### Start oxford5000 sniffer #####');
-    console.log('# Fetching HTML');
+    console.log('# Fetching word list HTML');
     const wordListSelectors = [
       {
         key: 'wordList',
@@ -157,9 +174,9 @@
       }
     ];
     const { htmlData: { wordList } } = await getHtmlniffer(wordListUrl, wordListSelectors);
-
     console.log(`# Word list: ${wordList.length}`);
 
+    console.log('# Start fetching HTML of each word');
     const wordSelectors = [
       {
         key: 'word',
@@ -177,30 +194,24 @@
         contents: ['innerText']
       }
     ];
-    let total = wordList.length;
+    const total = wordList.length;
     let cur = 0;
-    const taskBlockQueue = [];
-    const taskBlockSize = 500;
-    wordList.length = 1000;
-    while(wordList.length) {
-      taskBlockQueue.push(wordList.splice(0, taskBlockSize));
+    wordList.length = 500;
+    for(const item of wordList) {
+      cur ++;
+      const { word, link, belong } = item;
+      item.belong = belong?.toUpperCase();
+
+      console.log(`# Currently fetching: ${word} (${cur}/${total})`);
+
+      const { htmlData } = await getHtmlniffer(link, wordSelectors);
+      item.definition = htmlData;
+
+      console.log(`# Successfully!`);
     }
 
-    while(taskBlockQueue.length) {
-      const task = taskBlockQueue.shift();
+    exportJson(wordList, 'oxford5000');
 
-      console.log(`# Fetching HTML`);
-      for (const item of task) {
-        cur ++;
-        const { word, link } = item;
-        console.log(`# Currently fetching: ${word} (${cur}/${total})`);
-        const { htmlData } = await getHtmlniffer(link, wordSelectors);
-        item.definition = htmlData;
-        wordList.push(item);
-      }
-      console.log(`# HTMLs`);
-    }
-    exportJson(wordList);
-    console.log('##### Exit oxford5000 sniffer #####');
+    console.log('##### Finish oxford5000 sniffer #####');
   })();
 })();
