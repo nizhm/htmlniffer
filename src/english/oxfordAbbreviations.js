@@ -109,6 +109,7 @@
     constructor(url, selectors) {
       this.htmlURL = url;
       this.htmlData = {};
+      // To fetch the HTML and extract data from it by invoke `sniff`
       this.sniff = async function() {
         const doc = await htmlFetcher(url);
         Htmlniffer.getContent(doc, selectors, this.htmlData);
