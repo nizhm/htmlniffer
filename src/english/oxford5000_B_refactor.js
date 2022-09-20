@@ -52,80 +52,91 @@
   /**
    * get data from html Document
    *
-   * @class Htmlniffer
+   * @class Hniffer
    */
-  class Htmlniffer {
-    static getContent = (node, selectors, container) => {
-      for(const { key, selector, contents } of selectors) {
-        const matches = node.querySelectorAll(selector);
-        const matchesLen = matches.length;
+  class Hniffer {
+    static getDatum = (node, selector, datum) => {
+      const matches = node.querySelectorAll(selector);
+      const matchesLen = matches.length;
 
-        if (!matchesLen) {
-          container[key] = null;
-          return;
+      if (!matchesLen) {
+        return null;
+      }
+
+      const datumList = [];
+      const isStringList = typeof datum[0] === 'string';
+      if (isStringList) {
+        if (!datum.includes('innerHTML')) {
+          datum.push('innerHTML');
         }
-
-        const hasSubData = typeof contents[0] !== 'string';
-        let contentList = [];
-        if (hasSubData) {
-          matches.forEach(element => {
-            let item = {};
-            contents.forEach(({ key: subKey, selector: subSelector, contents: subContents }) => {
-              if (!subContents.includes('innerHTML')) {
-                subContents.push('innerHTML');
-              }
-              const subNode = element.querySelector(subSelector);
-              let cont;
-              cont = subContents.map(el => `subNode?.${el}`).join('||');
-              cont += `||''`;
-              cont = eval(cont);
-              item[subKey] = cont;
-            });
-            contentList.push(item);
+        let contCode;
+        contCode = datum.map(el => `element?.${el}`).join('||');
+        contCode += `||''`;
+        for(const element of matches) {
+          const content = eval(contCode);
+          datumList.push(content);
+        }
+      } else {
+        for(const ele of matches) {
+          const item = {};
+          datum.forEach(({ name: subKey, selector: subSelector, datum: subContents }) => {
+            if (!subContents.includes('innerHTML')) {
+              subContents.push('innerHTML');
+            }
+            const subNode = element.querySelector(subSelector);
+            let cont;
+            cont = subContents.map(el => `subNode?.${el}`).join('||');
+            cont += `||''`;
+            cont = eval(cont);
+            item[subKey] = cont;
           });
-          if (matchesLen === 1) {
-            contentList = contentList[0];
-          }
-          container[key] = contentList;
-        } else {
-          if (!contents.includes('innerHTML')) {
-            contents.push('innerHTML');
-          }
-          matches.forEach(element => {
-            let content;
-            content = contents.map(el => `element?.${el}`).join('||');
-            content += `||''`;
-            content = eval(content);
-            contentList.push(content);
-          });
-          if (matchesLen === 1) {
-            contentList = contentList[0];
-          }
-          container[key] = contentList;
+          datumList.push(item);
         }
       }
+
+      if (datumList.length === 1) {
+        return datumList[0];
+      }
+
+      return datumList;
+    };
+
+    static getContent = function (node, selectors, container = {}) {
+      if (!node) {
+        return null;
+      }
+
+      for(const { name, selector, datum, subSelectors } of selectors) {
+        if (datum) {
+          container[name] = Hniffer.getDatum(node, selector, datum);
+          continue;
+        }
+
+        container[name] = Hniffer.getContent(node.querySelector(selector), subSelectors);
+      }
+      return container;
     }
 
     constructor(url, selectors) {
       this.htmlURL = url;
-      this.htmlData = {};
+      this.htmlData = null;
       this.sniff = async function() {
         const doc = await htmlFetcher(url);
-        Htmlniffer.getContent(doc, selectors, this.htmlData);
+        this.htmlData = Hniffer.getContent(doc, selectors);
       }
     }
   }
 
   /**
-   * get Htmlniffer and init it
+   * get Hniffer and init it
    *
    * @param args
-   * @return {Promise<Htmlniffer>}
+   * @return {Promise<Hniffer>}
    */
-  const getHtmlniffer = async (...args) => {
-    const htmlniffer = new Htmlniffer(...args);
-    await htmlniffer.sniff();
-    return htmlniffer;
+  const getHniffer = async (...args) => {
+    const hniffer = new Hniffer(...args);
+    await hniffer.sniff();
+    return hniffer;
   }
 
   (async () => {
@@ -137,43 +148,43 @@
     console.log('# Fetching word list HTML');
     const wordListSelectors = [
       {
-        key: 'wordList',
+        name: 'wordList',
         selector: '#wordlistsContentPanel > ul > li',
-        contents: [
+        datum: [
           {
-            key: 'word',
+            name: 'word',
             selector: 'a',
-            contents: ['innerText']
+            datum: ['innerText']
           },
           {
-            key: 'link',
+            name: 'link',
             selector: 'a',
-            contents: ['href']
+            datum: ['href']
           },
           {
-            key: 'belong',
+            name: 'belong',
             selector: '.belong-to',
-            contents: ['innerText']
+            datum: ['innerText']
           },
           {
-            key: 'pos',
+            name: 'pos',
             selector: '.pos',
-            contents: ['innerText']
+            datum: ['innerText']
           }
         ]
       },
       {
-        key: 'pageHeader',
+        name: 'pageHeader',
         selector: '.h',
-        contents: ['innerText']
+        datum: ['innerText']
       },
       {
-        key: 'listHeader',
+        name: 'listHeader',
         selector: '#wordlistsBreadcrumb > span:nth-child(2)',
-        contents: ['innerText']
+        datum: ['innerText']
       }
     ];
-    const { htmlData: { wordList } } = await getHtmlniffer(wordListUrl, wordListSelectors);
+    const { htmlData: { wordList } } = await getHniffer(wordListUrl, wordListSelectors);
     console.log(`# Word list: ${wordList.length}`);
 
     console.log('# Start fetching HTML of each word');
@@ -204,7 +215,7 @@
 
       console.log(`# Currently fetching: ${word} (${cur}/${total})`);
 
-      const { htmlData } = await getHtmlniffer(link, wordSelectors);
+      const { htmlData } = await getHniffer(link, wordSelectors);
       item.definition = htmlData;
 
       console.log(`# Successfully!`);
