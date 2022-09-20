@@ -1,5 +1,7 @@
-# htmlniffer
-net html data fetcher
+# htmlniffer</br>
 
-# init project and install dependencies
-`npm run init`
+Network HTML data fetcher
+
+## init project and install dependencies<br/>
+
+**`npm run init`**
